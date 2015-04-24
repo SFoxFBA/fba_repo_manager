@@ -1,0 +1,12 @@
+<?php
+
+function fba_repo_manager_enable() {
+  module_load_include('inc', 'fedora_repository', 'api/fedora_item');
+  module_load_include('inc', 'fedora_repository', 'api/fedora_utils');
+  if (!fedora_available()) {
+    drupal_set_message(t('Fedora instance is not currently available.  Installation must be verified and completed on the Islandora Configuration page.'));
+  }
+  else {
+    
+  }
+}

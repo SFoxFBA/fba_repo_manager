@@ -1,0 +1,7 @@
+name = FBA Repository Manager Administration
+description = A custom FBA Module to provide a central point for the repository manager to administrate DOI's and Terms
+package = FBA Solution Pack
+version = 6.x-13.1
+core = 6.x
+dependencies[] = fedora_repository
+dependencies[] = fba_doi

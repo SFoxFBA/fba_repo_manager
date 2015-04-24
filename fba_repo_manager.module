@@ -1,0 +1,147 @@
+<?php
+
+require_once drupal_get_path('module', 'fba_repo_manager') . '/repomgr.doi.inc';
+require_once drupal_get_path('module', 'fba_repo_manager') . '/repomgr.term.inc';
+
+/**
+ * @file
+ * FBA Repository Manager solution pack module
+ */
+
+/**
+ * Provide definitions for menu callbacks.
+ *
+ * @return array
+ *   Callback definitions
+ */
+function fba_repo_manager_menu() {
+  $items = array();
+  $items['repomgr'] = array(
+    'title' => 'Repository Manager Functions',
+    'description' => 'Repository Manager DOI and Term administration.',
+    'page callback' => 'fba_repo_manager_menu_block_page',
+    'access callback' => 'fba_repo_manager_check_permissions',
+    'access arguments' => array(fba_repo_manager_perm()),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  $items['repomgr/doi'] = array(
+    'title' => 'Check published objects and DOIs',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('fba_repo_manager_multistep_form'),
+    'access callback' => 'fba_repo_manager_check_permissions',
+    'access arguments' => array(fba_repo_manager_perm()),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  $items['repomgr/terms'] = array(
+    'title' => 'Check for orphaned terms',
+    'file' => 'repomgr.term.inc',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('fba_repo_manager_multistep_term_form'),
+    'access callback' => 'fba_repo_manager_check_permissions',
+    'access arguments' => array(fba_repo_manager_perm()),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  return $items;
+}
+
+/**
+ * Access callback function.
+ *
+ * This function is the access callback used for access
+ * to the workflow page and configuration section.
+ *
+ * @param array $permission_array 
+ *   those user roles to allow access
+ *
+ * @return boolean
+ *   whether or not to permit access
+ */
+function fba_repo_manager_check_permissions($permission_array) {
+  module_load_include('collection.inc', 'islandora_workflow');
+  module_load_include('inc', 'islandora_workflow');
+
+  // If the user is anonymous then return false.
+  if (!user_is_logged_in()) {
+    return false;
+  }
+
+  // Let the user into any page if they are a workflow admin.
+  if (in_array('fba_repo_manager_Repository_Manager', $permission_array) &&
+      user_access('fba_repo_manager_Repository_Manager')) {
+    return true;
+  }
+
+  // Loop through permissions allowed.
+  foreach ($permission_array as $permission) {
+    // Return true if the user has an allowed permission.
+    if ($permission != 'fba_repo_manager_Repository_Manager' &&
+        user_access($permission) &&
+        islandora_workflow_get_users_collections($permission) != false) {
+      return true;
+    }
+  }
+
+  // If no permission matched then return false.
+  return false;
+}
+
+/**
+ * Implements hook_perm().
+ *
+ * The list of available permissions for this module.
+ *
+ * @return array
+ *   The list of permissions.
+ */
+function fba_repo_manager_perm() {
+  return array(
+    'fba_repo_manager_Repository_Manager',
+  );
+}
+
+/**
+ * Provide a single block from the administration menu as a page.
+ *
+ * This function is often a destination for these blocks.
+ * For example, 'admin/content/types' needs to have a destination to be valid
+ * in the Drupal menu system, but too much information there might be
+ * hidden, so we supply the contents of the block.
+ *
+ * @return
+ *   The output HTML.
+ */
+function fba_repo_manager_menu_block_page() {
+  $item = menu_get_item();
+  if ($content = fba_repo_manager_menu_block($item)) {
+    $output = theme('admin_block_content', $content);
+  }
+  else {
+    $output = t('You do not have any administrative items.');
+  }
+  return $output;
+}
+
+/**
+ * Provide a single block on the overview page.
+ *
+ * @param $item 
+ *   The menu item to be displayed.
+ */
+function fba_repo_manager_menu_block($item) {
+  module_load_include('module', 'system');
+
+  return system_admin_menu_block($item);
+}
+
+/* * s
+ * This function is necessary as the Drupal batch api runs out of memory when being called
+ * from a large form submit handler
+ */
+
+function _repomgr_batch_process_pages($batch) {
+  batch_set($batch);
+  batch_process();
+}
