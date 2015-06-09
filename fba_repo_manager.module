@@ -2,6 +2,8 @@
 
 require_once drupal_get_path('module', 'fba_repo_manager') . '/repomgr.doi.inc';
 require_once drupal_get_path('module', 'fba_repo_manager') . '/repomgr.term.inc';
+require_once drupal_get_path('module', 'fba_repo_manager') . '/repomgr.publish.inc';
+require_once drupal_get_path('module', 'fba_repo_manager') . '/publishRecursiveIterator.inc';
 
 /**
  * @file
@@ -26,7 +28,7 @@ function fba_repo_manager_menu() {
   );
 
   $items['repomgr/doi'] = array(
-    'title' => 'Check published objects and DOIs',
+    'title' => 'Check published objects for DOIs',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('fba_repo_manager_multistep_form'),
     'access callback' => 'fba_repo_manager_check_permissions',
@@ -43,6 +45,16 @@ function fba_repo_manager_menu() {
     'access arguments' => array(fba_repo_manager_perm()),
     'type' => MENU_NORMAL_ITEM,
   );
+
+  $items['repomgr/publish'] = array(
+    'title' => 'Check objects that have been submitted for publication',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('fba_repo_manager_multistep_publish_form'),
+    'access callback' => 'fba_repo_manager_check_permissions',
+    'access arguments' => array(fba_repo_manager_perm()),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
 
   return $items;
 }
@@ -145,3 +157,18 @@ function _repomgr_batch_process_pages($batch) {
   batch_set($batch);
   batch_process();
 }
+
+/**
+ * Implementation of hook_theme().
+ */
+function fba_repo_manager_theme() {
+  $themes = array(
+    'fba_repo_manager_multistep_publish_form' => array(
+      'arguments' => array('form'),
+      'function' => 'fba_repo_manager_multistep_publish_form_page',
+    ),
+  );
+  return( $themes );
+}
+
+ 

@@ -17,16 +17,19 @@ function _finished_1($success, $results, $operations) {
     // An error occurred.
     // $operations contains the operations that remained unprocessed.
     $error_operation = reset($operations);
-    $message = 'An error occurred while processing ' . $error_operation[0] . ' with arguments :' . print_r($error_operation[0], true);
+    $message = 'An error occurred while processing ' . $error_operation[0] .
+        ' with arguments :' . print_r($error_operation[0], true);
   }
   drupal_set_message($message);
 }
 
 /**
  * Batch 'finished' callback 
+ * 
  * @param type $success
  * @param type $results
  * @param type $operations
+ * @return none
  */
 function _finished_2($success, $results, $operations) {
   if ($success) {
@@ -49,6 +52,7 @@ function _finished_2($success, $results, $operations) {
  * Multistep form
  * @param type $form_state
  * @return string
+ * 
  */
 function fba_repo_manager_multistep_form($form_state = NULL) {
 
@@ -57,7 +61,10 @@ function fba_repo_manager_multistep_form($form_state = NULL) {
   $username = islandora_doi_get_username();
   $haspassword = islandora_doi_has_password();
 
-  if (empty($prefix) || empty($hostname) || empty($username) || (!$haspassword)) {
+  if (empty($prefix) ||
+      empty($hostname) ||
+      empty($username) ||
+      (!$haspassword)) {
     $form['plaintext'] = array(
       '#type' => 'markup',
       '#value' => 'The Islandora DOI configuration values have not yet been '
@@ -117,15 +124,17 @@ function fba_repo_manager_multistep_form($form_state = NULL) {
 function fba_repo_manager_multistep_form_submit($form, &$form_state) {
   $step = isset($form_state['storage']['step']) ? $form_state['storage']['step'] : 1;
   switch ($step) {
-    case 1:
-      drupal_set_message('step 1 completed');
-      batch_set(_batch_1());
-      break;
-    case 2:
-      drupal_set_message('step 2 completed');
-      batch_set(_batch_2());
-      $form_state['redirect'] = 'repomgr/doi_3';
-      break;
+    case 1: {
+        drupal_set_message('step 1 completed');
+        batch_set(_batch_1());
+        break;
+      }
+    case 2: {
+        drupal_set_message('step 2 completed');
+        batch_set(_batch_2());
+        $form_state['redirect'] = 'repomgr/doi_3';
+        break;
+      }
   }
 
   $form_state['storage']['step'] = $step + 1;
@@ -164,11 +173,12 @@ function _batch_1() {
 
 /**
  * Batch operation for batch 1
+ *
  * @param type $memberpid
  * @param type $context
  */
 function _op_1($memberpid, &$context) {
-    module_load_include('inc', 'fedora_repository', 'api/tuque');
+  module_load_include('inc', 'fedora_repository', 'api/tuque');
 
   // get the mads datastream for this object
   $fedora_object = islandora_object_load($memberpid);
@@ -242,10 +252,10 @@ function _doi_get_pids_from_collections() {
 
   $query = <<<EOD
   select \$object from <#ri>
-    where (\$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtcavon:collection> or
-           \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtcaeden:collection> or
-           \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtcawensum:collection> or
-           \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/fbads:collection>)
+    where (\$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtceavon:collection> or
+           \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtceeden:collection> or
+           \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtcewensum:collection> or
+           \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/fbaeds:collection>)
 EOD;
 
   $query = htmlentities(urlencode($query));
@@ -270,7 +280,7 @@ function _alreadyhasdoi($pid) {
   module_load_include('inc', 'fedora_repository', 'api/tuque');
   module_load_include('module', 'islandora_doi', 'islandora_doi');
   module_load_include('module', 'fba_doi', 'fba_doi');
-  
+
 
   $fedora_object = islandora_object_load($pid);
   $dtca = $fedora_object['DTCA'];
