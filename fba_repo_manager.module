@@ -3,7 +3,7 @@
 require_once drupal_get_path('module', 'fba_repo_manager') . '/repomgr.doi.inc';
 require_once drupal_get_path('module', 'fba_repo_manager') . '/repomgr.term.inc';
 require_once drupal_get_path('module', 'fba_repo_manager') . '/repomgr.publish.inc';
-require_once drupal_get_path('module', 'fba_repo_manager') . '/publishRecursiveIterator.inc';
+//require_once drupal_get_path('module', 'fba_repo_manager') . '/publishRecursiveIterator.inc';
 
 /**
  * @file

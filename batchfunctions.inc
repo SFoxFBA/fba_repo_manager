@@ -1,6 +1,7 @@
 <?php
 
-function cloneobject($pid, $rootobject, &$context) {
+//function cloneobject($pid, $rootobject, &$context) {
+function cloneobject($pid, &$context) {
   module_load_include('module', 'tuque_wrapper', 'tuque_wrapper');
   module_load_include('inc', 'sidora', 'includes/utils');
   module_load_include('inc', 'fedora_repository', 'api/fedora_item');
@@ -12,19 +13,43 @@ function cloneobject($pid, $rootobject, &$context) {
   $policydsid = 'POLICY';
   $fedora_object = islandora_object_load($pid);
   $clonedobject = islandora_copy_object($fedora_object);
+
   //Need to ignore the POLICY datastream during cloning.
   $clonedobject->purgeDatastream($policydsid);
+
   //Get the collection and license pid from the DTCA datastream
   $sourcedtca = $fedora_object['DTCA'];
   $sourcedtcacontent = $sourcedtca->content;
   $sourcedtcads = simplexml_load_string($sourcedtcacontent);
 
   $selectedcollection = (string) $sourcedtcads->archivalPublicationCollection;
-  $licencepid = (string) $sourcedtcads->archivalPublicationLicensePid;
+  $licencepid = (string) $sourcedtcads->archivalPublicationLicencePid;
 
   //need to change the objectId (pid) of the cloned object
   $newpid = $repository->getNextIdentifier($selectedcollection);
   $clonedobject->id = $newpid;
+
+  //Tidy up the datastreams
+  $dtca = $clonedobject['DTCA'];
+  $dtcacontent = $dtca->content;
+  $dtcads = simplexml_load_string($dtcacontent);
+  $dtcads->archivalPublicationVersion++;
+  sidora_update_datastream($clonedobject, $dtcads->asXML(), 'DTCA', NULL, 'text/xml');
+
+
+  $metadataonlytext = (string) $dtcads->publishMetadataOnly;
+
+  //Remove the restrictive POLICY datastream, and replace with an open one,
+  //dependent on the Metadata only flag.
+  if (strcmp($metadataonlytext, 'Yes') === 0) {
+    sidora_update_datastream($clonedobject, create_published_xacml(), $policydsid, NULL, 'text/xml');
+  }
+  else {
+    sidora_update_datastream($clonedobject, create_open_xacml(), $policydsid, NULL, 'text/xml');
+  }
+
+  $rels = $clonedobject->relationships;
+  $rels->add(FBA_URI, 'hasLicence', $licencepid);
 
   $ingestobject = islandora_add_object($clonedobject);
   if ($ingestobject) {
@@ -35,22 +60,6 @@ function cloneobject($pid, $rootobject, &$context) {
     //if the ingest fails then
     $ingestsuccessful = FALSE;
   }
-  $dtca = $ingestobject['DTCA'];
-  $dtcacontent = $dtca->content;
-  $dtcads = simplexml_load_string($dtcacontent);
-  $metadataonlytext = (string) $dtcads->publishMetadataOnly;
-
-  //Remove the restrictive POLICY datastream, and replace with an open one,
-  //dependant on the Metadata only flag.
-  if (strcmp($metadataonlytext, 'Yes') === 0) {
-    sidora_update_datastream($clonedobject, create_published_xacml(), $policydsid, NULL, 'text/xml');
-  }
-  else {
-    sidora_update_datastream($clonedobject, create_open_xacml(), $policydsid, NULL, 'text/xml');
-  }
-  $rels = $ingestobject->relationships;
-  $rels->add(FBA_URI, 'hasLicence', $licencepid);
-
   $context['results']['success'][] = array($pid, $newpid, $ingestsuccessful);
 
   return;
@@ -95,9 +104,10 @@ function create_open_xacml(stdClass $account = NULL) {
 
 function tidyuprelations($batchresults, &$context) {
   module_load_include('inc', 'sidora', 'includes/fba');
-
-  global $user;
-
+  module_load_include('module', 'tuque_wrapper', 'tuque_wrapper');
+  module_load_include('inc', 'sidora', 'includes/utils');
+  module_load_include('inc', 'fedora_repository', 'api/fedora_item');
+  //global $user;
   foreach ($batchresults as $batchresult) {
     $privatepid = $batchresult[0];
     $publicpid = $batchresult[1];
@@ -126,7 +136,6 @@ function tidyuprelations($batchresults, &$context) {
             $dcid = $transformeddoc->createElement('dc:identifier', $publicpid);
             $topleveldc->appendChild($dcid);
             $object['DC']->content = $transformeddoc->saveXML();
-
             break;
           }
         case 'RELS-EXT': {
@@ -135,22 +144,30 @@ function tidyuprelations($batchresults, &$context) {
             $imocs = $rels->get(FEDORA_RELS_EXT_URI, 'isMemberOfCollection');
             foreach ($imocs as $imoc) {
               $imocvalue = $imoc[object][value];
-              $user_id = $user->islandora_user_pid;
-              $user_collection_ns = str_replace(array('-', ':'), '', $user_id);
-              $user_collection = $user_collection_ns . ':collection';
-              if (strcmp($imocvalue, $user_collection) === 0) {
-                $rels->remove(FEDORA_RELS_EXT_URI, 'isMemberOfCollection', $imocvalue);
-                $rels->add(FEDORA_RELS_EXT_URI, 'isMemberOfCollection', $selectedcollectionns . ':collection');
-              }
+              //$user_id = $user->islandora_user_pid;
+              //$user_collection_ns = str_replace(array('-', ':'), '', $user_id);
+              //$user_collection = $user_collection_ns . ':collection';
+              //if (strcmp($imocvalue, $user_collection) === 0) {
+              $rels->remove(FEDORA_RELS_EXT_URI, 'isMemberOfCollection', $imocvalue);
+              $rels->add(FEDORA_RELS_EXT_URI, 'isMemberOfCollection', $selectedcollectionns . ':collection');
+              //}
             }
+            $rels->remove(FEDORA_MODEL_URI, 'hasModel', 'si:conceptCModel');
+            $rels->remove(FEDORA_MODEL_URI, 'hasModel', 'si:resourceCModel');
             //isComponentInputOf dtcan:xx needs swapping to the published (eg) analysis pid
             swaprelsvalues('http://fba.org.uk/schemas/fba/fba_rdf/1.0.0/', 'isComponentInputOf', $batchresults, $object);
+            //URL RDFS's dtcan:xx needs swapping to the published (eg) analysis pid
+            $allurlrdfs = sidora_return_fba_url_rdfs();
+            foreach ($allurlrdfs as $allurlrdf) {
+              swaprelsvalues('http://fba.org.uk/schemas/fba/fba_rdf/1.0.0/', $allurlrdf, $batchresults, $object);
+            }
 
             //Handle hasXXXX relsext here
-            $allrdfs = array_merge(sidora_return_forward_fba_concept_rdfs(), sidora_return_forward_fba_resource_rdfs());
+            $allrdfs = array_merge(sidora_return_fba_concept_rdfs(), sidora_return_fba_resource_rdfs());
             foreach ($allrdfs as $allrdf) {
               swaprelsvalues(RELS_EXT_URI, $allrdf, $batchresults, $object);
             }
+
             break;
           }
         case 'DTCA': {
@@ -163,7 +180,8 @@ function tidyuprelations($batchresults, &$context) {
             $sxmldtca->archivalPublicationDate = $nowdate;
             //Version number needs to be taken from last published in the chain
             if (is_null($lastchainpid)) {
-              $sxmldtca->archivalPublicationVersion++;
+              $x = 1;
+              //$sxmldtca->archivalPublicationVersion++;
             }
             else {
               $lastchainobject = islandora_object_load($lastchainpid[0]);
@@ -171,8 +189,12 @@ function tidyuprelations($batchresults, &$context) {
               $lastchaindtcacontent = $lastchaindtca->content;
               $lastchainsxmldtca = new SimpleXMLElement($lastchaindtcacontent);
               $lastchainversion = (int) $lastchainsxmldtca->archivalPublicationVersion;
-              $sxmldtca->archivalPublicationVersion = $lastchainversion + 1;
+              //$sxmldtca->archivalPublicationVersion = $lastchainversion + 1;
             }
+
+            unset($sxmldtca->archivalPublicationState);
+            unset($sxmldtca->archivalPublicationLicencePid);
+            unset($sxmldtca->archivalPublicationCollection);
 
             $object['DTCA']->content = $sxmldtca->asXML();
             break;
@@ -215,10 +237,22 @@ function tidyuprelations($batchresults, &$context) {
     $privateobject = islandora_object_load($pidtoupdate);
     $privrels = $privateobject->relationships;
     $privrels->add('http://fba.org.uk/schemas/fba/fba_rdf/1.0.0/', 'hasPublishedVersion', $pidtopointto);
+
+    $dtca = $privateobject['DTCA'];
+    $dtcacontent = $dtca->content;
+    $sxmldtca = new SimpleXMLElement($dtcacontent);
+    unset($sxmldtca->archivalPublicationState);
+    unset($sxmldtca->archivalPublicationLicencePid);
+    unset($sxmldtca->archivalPublicationCollection);
+    $privateobject['DTCA']->content = $sxmldtca->asXML();
+    //if it's a dataset, then phase 5 needs to know about it
+    if (strcmp(substr($privatepid, 0, strpos($privatepid, ':')), 'dtcds') === 0) {
+      $context['results']['success'][] = array($privatepid, $publicpid, TRUE);
+    }
   }
 }
 
-function swaprelsvalues($namespace, $relation, $batchresults, $object) {
+function swaprelsvalues($namespace, $relation, $batchresults, &$object) {
   $rels = $object->relationships;
   $relations = $rels->get($namespace, $relation);
   foreach ($relations as $relvalue) {
@@ -245,17 +279,5 @@ function findlastpidinchain($pid, $namespace, $relation) {
   }
   else {
     return NULL;
-  }
-}
-
-function _finished($success, $results, $operations) {
-  if ($success) {
-//drupal_set_message(format_plural(count($results['success']), 'One done.', '@count done.'));
-    $_SESSION['my_batch_succeeded'] = TRUE;
-    $_SESSION['my_batch_results'] = $results;
-  }
-  else {
-//$message = t('Finished with an error.');
-    $_SESSION['my_batch_succeeded'] = FALSE;
   }
 }

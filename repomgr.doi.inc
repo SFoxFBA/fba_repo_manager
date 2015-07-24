@@ -252,10 +252,10 @@ function _doi_get_pids_from_collections() {
 
   $query = <<<EOD
   select \$object from <#ri>
-    where (\$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtceavon:collection> or
-           \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtceeden:collection> or
-           \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtcewensum:collection> or
-           \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/fbaeds:collection>)
+    where (\$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtcavon:collection> or
+           \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtceden:collection> or
+           \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtcwensum:collection> or
+           \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/fbads:collection>)
 EOD;
 
   $query = htmlentities(urlencode($query));
