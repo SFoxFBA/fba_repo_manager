@@ -3,7 +3,7 @@
 require_once drupal_get_path('module', 'fba_repo_manager') . '/repomgr.doi.inc';
 require_once drupal_get_path('module', 'fba_repo_manager') . '/repomgr.term.inc';
 require_once drupal_get_path('module', 'fba_repo_manager') . '/repomgr.publish.inc';
-//require_once drupal_get_path('module', 'fba_repo_manager') . '/publishRecursiveIterator.inc';
+require_once drupal_get_path('module', 'fba_repo_manager') . '/repomgr.repair.inc';
 
 /**
  * @file
@@ -55,6 +55,14 @@ function fba_repo_manager_menu() {
     'type' => MENU_NORMAL_ITEM,
   );
 
+    $items['repomgr/repair'] = array(
+    'title' => 'Repair objects ',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('fba_repo_manager_multistep_repair_form'),
+    'access callback' => 'fba_repo_manager_check_permissions',
+    'access arguments' => array(fba_repo_manager_perm()),
+    'type' => MENU_NORMAL_ITEM,
+  );
 
   return $items;
 }

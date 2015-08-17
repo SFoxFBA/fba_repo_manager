@@ -107,7 +107,6 @@ function tidyuprelations($batchresults, &$context) {
   module_load_include('module', 'tuque_wrapper', 'tuque_wrapper');
   module_load_include('inc', 'sidora', 'includes/utils');
   module_load_include('inc', 'fedora_repository', 'api/fedora_item');
-  //global $user;
   foreach ($batchresults as $batchresult) {
     $privatepid = $batchresult[0];
     $publicpid = $batchresult[1];
@@ -117,9 +116,9 @@ function tidyuprelations($batchresults, &$context) {
     $dtcads = simplexml_load_string($dtcacontent);
     $selectedcollectionns = (string) $dtcads->archivalPublicationCollection;
 
-    $lastchainpid = findlastpidinchain($privatepid, 'http://fba.org.uk/schemas/fba/fba_rdf/1.0.0/', 'hasPublishedVersion');
+    $lastchainpid = findlastpidinchain($privatepid, FBA_URI, 'hasPublishedVersion');
 
-    foreach ($object as $dsid => $datastream) {
+    foreach ($object as $dsid => $notused) {
       switch ($dsid) {
         case 'DC': {
             //Apply the new publish transformation 
@@ -128,8 +127,6 @@ function tidyuprelations($batchresults, &$context) {
             $xsl->load($transform);
             $xslt = new XSLTProcessor();
             $xslt->importStyleSheet($xsl);
-            $dtca = $object['DTCA'];
-            $dtcacontent = $dtca->content;
             $ds = DOMDocument::loadXML($dtcacontent);
             $transformeddoc = $xslt->transformToDoc($ds);
             $topleveldc = $transformeddoc->getElementsByTagNameNS('http://www.openarchives.org/OAI/2.0/oai_dc/', 'dc')->item(0);
@@ -149,17 +146,18 @@ function tidyuprelations($batchresults, &$context) {
               //$user_collection = $user_collection_ns . ':collection';
               //if (strcmp($imocvalue, $user_collection) === 0) {
               $rels->remove(FEDORA_RELS_EXT_URI, 'isMemberOfCollection', $imocvalue);
+              $selectedcollectionns = (string) $dtcads->archivalPublicationCollection;
               $rels->add(FEDORA_RELS_EXT_URI, 'isMemberOfCollection', $selectedcollectionns . ':collection');
               //}
             }
             $rels->remove(FEDORA_MODEL_URI, 'hasModel', 'si:conceptCModel');
             $rels->remove(FEDORA_MODEL_URI, 'hasModel', 'si:resourceCModel');
             //isComponentInputOf dtcan:xx needs swapping to the published (eg) analysis pid
-            swaprelsvalues('http://fba.org.uk/schemas/fba/fba_rdf/1.0.0/', 'isComponentInputOf', $batchresults, $object);
+            swaprelsvalues(FBA_URI, 'isComponentInputOf', $batchresults, $object);
             //URL RDFS's dtcan:xx needs swapping to the published (eg) analysis pid
             $allurlrdfs = sidora_return_fba_url_rdfs();
             foreach ($allurlrdfs as $allurlrdf) {
-              swaprelsvalues('http://fba.org.uk/schemas/fba/fba_rdf/1.0.0/', $allurlrdf, $batchresults, $object);
+              swaprelsvalues(FBA_URI, $allurlrdf, $batchresults, $object);
             }
 
             //Handle hasXXXX relsext here
@@ -168,13 +166,14 @@ function tidyuprelations($batchresults, &$context) {
               swaprelsvalues(RELS_EXT_URI, $allrdf, $batchresults, $object);
             }
 
+            //As full versioning code isn't in place, will just force this for now
+            $rels->add(FBA_URI, 'isLatestVersion', 'yes', RELS_TYPE_PLAIN_LITERAL);
+
             break;
           }
         case 'DTCA': {
             //the new objects archival version number needs setting to 1 greater 
             //than current highest
-            $dtca = $object['DTCA'];
-            $dtcacontent = $dtca->content;
             $sxmldtca = new SimpleXMLElement($dtcacontent);
             $nowdate = sprintf("%sT%s.000Z", date("Y-m-d"), date("H:i:s"));
             $sxmldtca->archivalPublicationDate = $nowdate;
@@ -236,11 +235,11 @@ function tidyuprelations($batchresults, &$context) {
 
     $privateobject = islandora_object_load($pidtoupdate);
     $privrels = $privateobject->relationships;
-    $privrels->add('http://fba.org.uk/schemas/fba/fba_rdf/1.0.0/', 'hasPublishedVersion', $pidtopointto);
+    $privrels->add(FBA_URI, 'hasPublishedVersion', $pidtopointto);
 
-    $dtca = $privateobject['DTCA'];
-    $dtcacontent = $dtca->content;
-    $sxmldtca = new SimpleXMLElement($dtcacontent);
+    $dtcapriv = $privateobject['DTCA'];
+    $dtcacontentpriv = $dtcapriv->content;
+    $sxmldtca = new SimpleXMLElement($dtcacontentpriv);
     unset($sxmldtca->archivalPublicationState);
     unset($sxmldtca->archivalPublicationLicencePid);
     unset($sxmldtca->archivalPublicationCollection);
@@ -280,4 +279,64 @@ function findlastpidinchain($pid, $namespace, $relation) {
   else {
     return NULL;
   }
+}
+
+function downloadablefilesizes($publicpid, &$context) {
+  module_load_include('module', 'tuque_wrapper', 'tuque_wrapper');
+  $cumulativesize = $cumulativenumoffiles = $datacompnumoffiles = $datacompdssize = 0;
+  $results = get_all_core_data_components($publicpid);
+  foreach ($results as $resultpid) {
+    $datacomp_object = islandora_object_load($resultpid);
+    $dtca = $datacomp_object['DTCA'];
+    $dtcacontent = $dtca->content;
+    $dtcaxml = simplexml_load_string($dtcacontent);
+    $metadataonlytext = (string) $dtcaxml->publishMetadataOnly;
+
+    if (strcmp($metadataonlytext, 'No') === 0) {
+      //get the filesize
+      foreach ($datacomp_object as $datastream) {
+        if (preg_match('/^OBJ/', $datastream->id)) {
+          $datacompdssize+= $datastream->size; //in bytes
+          $datacompnumoffiles++;
+        }
+      }
+      $cumulativenumoffiles = $cumulativenumoffiles + $datacompnumoffiles;
+      if (is_numeric($datacompdssize)) {
+        $cumulativesize+= intval($datacompdssize);
+      }
+    }
+
+    if ($datacompnumoffiles === 0) {
+      $datacompdssize = 'na';
+    }
+    $datacomp_object->relationships->add('http://purl.org/dc/terms/', 'extent', $datacompdssize, RELS_TYPE_PLAIN_LITERAL);
+    $datacompdssize = 0;
+    $datacomp_object->relationships->add(FBA_URI, 'hasDownloadableFiles', $datacompnumoffiles, RELS_TYPE_PLAIN_LITERAL);
+    $datacompnumoffiles = 0;
+  }
+  //now add the cumulative totals to the dataset
+  $rootobject = islandora_object_load($publicpid);
+  if ($cumulativenumoffiles === 0) {
+    $cumulativesize = 'na';
+  }
+  $rootobject->relationships->add('http://purl.org/dc/terms/', 'extent', $cumulativesize, RELS_TYPE_PLAIN_LITERAL);
+  $rootobject->relationships->add(FBA_URI, 'hasDownloadableFiles', $cumulativenumoffiles, RELS_TYPE_PLAIN_LITERAL);
+}
+
+function get_all_core_data_components($pid) {
+  module_load_include('inc', 'sidora', 'includes/fba');
+  module_load_include('module', 'tuque_wrapper', 'tuque_wrapper');
+
+  $predicates = array_merge(sidora_return_fba_resource_rdfs(), sidora_return_fba_other_rdfs());
+  $object = islandora_object_load($pid);
+
+  foreach ($predicates as $predicate) {
+    $rels = $object->relationships->get('info:fedora/fedora-system:def/relations-external#', $predicate);
+    if (count($rels) > 0) {
+      foreach ($rels as $rel) {
+        $relsresults[] = $rel['object']['value'];
+      }
+    }
+  }
+  return $relsresults;
 }

@@ -187,7 +187,36 @@ function fba_repo_manager_multistep_publish_form($form_state = NULL) {
         break;
       }
     case 5: {
+        $rownumber = 0;
+        $form['plaintext'] = array(
+          '#type' => 'markup',
+          '#value' => 'This step adds individual and cumulative filesizes to objects<br />',
+        );
+        foreach ($_SESSION['my_batch_results']['success'] as $pidtomint) {
+          if (strcmp(substr($pidtomint[0], 0, strpos($pidtomint[0], ':')), 'dtcds') === 0) {
+            //original private object was a dataset, so a DOI is required
 
+            $form['row' . $rownumber] = array(
+              '#type' => 'fieldset',
+              '#collapsible' => FALSE,
+              '#collapsed' => FALSE,
+            );
+            $form['row' . $rownumber]['publishpid'] = array(
+              '#type' => 'markup',
+              '#value' => '<a href="http://environmentdata.org/archive/' . $pidtomint[1] . '" target="#blank" >' . $pidtomint[1] . '</a>',
+            );
+            $rownumber++;
+          }
+        }
+
+        $form['submit'] = array(
+          '#type' => 'submit',
+          '#value' => 'Disseminates filesizes across objects',
+        );
+
+        break;
+      }
+    case 6: {
         $rownumber = 0;
         $form['plaintext'] = array(
           '#type' => 'markup',
@@ -204,7 +233,7 @@ function fba_repo_manager_multistep_publish_form($form_state = NULL) {
             );
             $form['row' . $rownumber]['publishpid'] = array(
               '#type' => 'markup',
-              '#value' => '<a href="http://environmentdata.org/archive/' . $pidtomint[1] . '" target="#blank" >' . $pidtomint[1] . '</a>',
+              '#value' => '<a href="http://http://environmentdata.org/archive/' . $pidtomint[1] . '" target="#blank" >' . $pidtomint[1] . '</a>',
             );
             $rownumber++;
           }
@@ -232,7 +261,6 @@ function fba_repo_manager_multistep_publish_form($form_state = NULL) {
 
         break;
       }
-
     default: {
         break;
       }
@@ -381,16 +409,22 @@ function fba_repo_manager_multistep_publish_form_submit($form, &$form_state) {
         }
         break;
       }
+    case 6: {
+        $batchresultsuccess = $_SESSION['my_batch_succeeded']; //check return results
+        $batchresult = $_SESSION['my_batch_results'];
+        if ($batchresultsuccess) { //previous step worked
+          $batch = _publish_batch_6($batchresult['success']);
+          batch_set($batch);
+        }
+        break;
+      }
   }
 
   $form_state['storage']['step'] = $step + 1;
 }
 
 function pubsearch($pid) {
-  module_load_include('module', 'tuque_wrapper', 'tuque_wrapper');
   module_load_include('inc', 'sidora', 'includes/fba');
-
-  $repository = tuque_wrapper_get_repository_instance();
 
   $results = array();
   //get children from rels-ext
@@ -467,8 +501,7 @@ function _publish_batch_1() {
 
   $operations = array();
 
-  $rdfns = array_merge(sidora_return_fba_classes_namespaces(), sidora_return_fba_resources_namespaces());
-
+  $rdfns[] = 'dtcac';
   $query_string = "select DISTINCT ?object where {?object ?y ?z . FILTER regex(str(?object),";
   //"dtcmt|dtcac|dtcds" 
   $arraycount = count($rdfns);
@@ -511,7 +544,7 @@ function _publish_batch_3($topactivitypid, $clonelist) {
 
   $batch = array(
     'title' => t('First batch run'),
-    'file' => drupal_get_path('module', 'fba_repo_manager') . '/batchfunctions.inc',
+    'file' => drupal_get_path('module', 'fba_repo_manager') . '/batchfunctions_publish.inc',
     'operations' => array(),
     'finished' => '_publish_finished_3',
   );
@@ -534,11 +567,10 @@ function _publish_batch_4($pids) {
 
   $batch = array(
     'title' => t('Second batch run'),
-    'file' => drupal_get_path('module', 'fba_repo_manager') . '/batchfunctions.inc',
+    'file' => drupal_get_path('module', 'fba_repo_manager') . '/batchfunctions_publish.inc',
     'operations' => array(),
     'finished' => '_publish_finished_4',
   );
-
   $batch['operations'][] = array('tidyuprelations', array($pids));
   return $batch;
 }
@@ -552,9 +584,29 @@ function _publish_batch_4($pids) {
 function _publish_batch_5($pids) {
   $batch = array(
     'title' => t('Third batch run'),
-    'file' => drupal_get_path('module', 'fba_doi') . '/batchfunctions.inc',
+    'file' => drupal_get_path('module', 'fba_repo_manager') . '/batchfunctions_publish.inc',
     'operations' => array(),
     'finished' => '_publish_finished_5',
+  );
+
+  foreach ($pids as $pid) {
+    $batch['operations'][] = array('downloadablefilesizes', array($pid[1]));
+  }
+  return $batch;
+}
+
+/**
+ * Batch operation for batch 6
+ * 
+ * @param type $pid
+ * @param type $context
+ */
+function _publish_batch_6($pids) {
+  $batch = array(
+    'title' => t('Fourth batch run'),
+    'file' => drupal_get_path('module', 'fba_doi') . '/batchfunctions.inc',
+    'operations' => array(),
+    'finished' => '_publish_finished_6',
   );
 
   foreach ($pids as $pid) {
@@ -683,6 +735,26 @@ function _publish_finished_4($success, $results, $operations) {
  * @return none
  */
 function _publish_finished_5($success, $results, $operations) {
+
+  if ($success) {
+    $message = 'Objects have had been updated with filesizes.<br/>';
+  }
+  else {
+    $message = 'An error occurred while processing phase 5.';
+    $_SESSION['my_batch_succeeded'] = FALSE;
+  }
+  drupal_set_message($message);
+}
+
+/**
+ * Batch 'finished' callback 
+ * 
+ * @param type $success
+ * @param type $results
+ * @param type $operations
+ * @return none
+ */
+function _publish_finished_6($success, $results, $operations) {
   $succeeded = TRUE;
   foreach ($results['success'] as $mintresult) {
     //check if any of the ingest steps failed
