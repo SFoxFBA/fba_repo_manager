@@ -4,6 +4,7 @@ require_once drupal_get_path('module', 'fba_repo_manager') . '/repomgr.doi.inc';
 require_once drupal_get_path('module', 'fba_repo_manager') . '/repomgr.term.inc';
 require_once drupal_get_path('module', 'fba_repo_manager') . '/repomgr.publish.inc';
 require_once drupal_get_path('module', 'fba_repo_manager') . '/repomgr.repair.inc';
+require_once drupal_get_path('module', 'fba_repo_manager') . '/repomgr.unpublish.inc';
 
 /**
  * @file
@@ -54,16 +55,33 @@ function fba_repo_manager_menu() {
     'access arguments' => array(fba_repo_manager_perm()),
     'type' => MENU_NORMAL_ITEM,
   );
-
-    $items['repomgr/repair'] = array(
-    'title' => 'Repair objects ',
+  
+  $items['repomgr/unpublish'] = array(
+    'title' => 'Unpublish an activity and descendants',
     'page callback' => 'drupal_get_form',
-    'page arguments' => array('fba_repo_manager_multistep_repair_form'),
+    'page arguments' => array('fba_repo_manager_multistep_unpublish_form'),
     'access callback' => 'fba_repo_manager_check_permissions',
     'access arguments' => array(fba_repo_manager_perm()),
     'type' => MENU_NORMAL_ITEM,
   );
 
+  $items['repomgr/repair/check_cols'] = array(
+    'title' => 'Check COLS',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('fba_repo_manager_check_cols_form'),
+    'access callback' => 'fba_repo_manager_check_permissions',
+    'access arguments' => array(fba_repo_manager_perm()),
+    'type' => MENU_NORMAL_ITEM,
+  );
+  /*
+    $items['repomgr/repair/check_rels'] = array(
+    'title' => 'Check RELS-EXT',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('fba_repo_manager_check_rels_form'),
+    'access callback' => 'fba_repo_manager_check_permissions',
+    'access arguments' => array(fba_repo_manager_perm()),
+    'type' => MENU_NORMAL_ITEM,
+    ); */
   return $items;
 }
 
@@ -175,8 +193,10 @@ function fba_repo_manager_theme() {
       'arguments' => array('form'),
       'function' => 'fba_repo_manager_multistep_publish_form_page',
     ),
+    'fba_repo_manager_multistep_unpublish_form' => array(
+      'arguments' => array('form'),
+      'function' => 'fba_repo_manager_multistep_unpublish_form_page',
+    ),
   );
   return( $themes );
 }
-
- 

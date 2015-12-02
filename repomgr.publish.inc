@@ -7,6 +7,8 @@
  * 
  */
 function fba_repo_manager_multistep_publish_form($form_state = NULL) {
+  module_load_include('inc', 'sidora', 'includes/fba');
+  module_load_include('module', 'fba_doi', 'fba_doi');
 
   $step = isset($form_state['storage']['step']) ? $form_state['storage']['step'] : 1;
   // This is what tells the form which theme function to use
@@ -16,11 +18,9 @@ function fba_repo_manager_multistep_publish_form($form_state = NULL) {
     ); */
   switch ($step) {
     case 1: {
-        //check that islandora doi has been configured with values
-        if (islandora_doi_has_password() &&
-            (islandora_doi_get_prefix() !== '') &&
-            (islandora_doi_get_username() !== '') &&
-            (islandora_doi_get_hostname() !== '')) {
+        //check that doi has been configured with some values
+        $fba_doi = new fba_doi();
+        if ($fba_doi->fba_check_doi_configuration()) {
           $form['plaintext'] = array(
             '#type' => 'markup',
             '#value' => 'This step searches for datasets with a submitted tag in the DTCA datastream <br />',
@@ -83,7 +83,7 @@ function fba_repo_manager_multistep_publish_form($form_state = NULL) {
             );
             $form['row' . $rownumber]['hyperlink'] = array(
               '#type' => 'markup',
-              '#value' => '<a href="http://environmentdata.org/archive/' . $pidwithsubmittedflag[1] . '" target="#blank" >' . $pidwithsubmittedflag[1] . '</a>',
+              '#value' => '<a href="http://10.0.10.202/environmentdata.local/archive/' . $pidwithsubmittedflag[1] . '" target="#blank" >' . $pidwithsubmittedflag[1] . '</a>',
             );
           }
         }
@@ -118,7 +118,7 @@ function fba_repo_manager_multistep_publish_form($form_state = NULL) {
           );
           $form['row' . $rownumber]['publishpid'] = array(
             '#type' => 'markup',
-            '#value' => '<a href="http://environmentdata.org/archive/' . $pidtopublish . '" target="#blank" >' . $pidtopublish . '</a>',
+            '#value' => '<a href="http://10.0.10.202/environmentdata.local/archive/' . $pidtopublish . '" target="#blank" >' . $pidtopublish . '</a>',
           );
         }
 //        $form['pidstopublish'] = array(
@@ -159,7 +159,7 @@ function fba_repo_manager_multistep_publish_form($form_state = NULL) {
           );
           $form['row' . $rownumber]['publishpid'] = array(
             '#type' => 'markup',
-            '#value' => '<a href="http://environmentdata.org/archive/' . $pidtopublish . '" target="#blank" >' . $pidtopublish . '</a>',
+            '#value' => '<a href="http://10.0.10.202/environmentdata.local/archive/' . $pidtopublish . '" target="#blank" >' . $pidtopublish . '</a>',
           );
           $rownumber++;
         }
@@ -192,21 +192,29 @@ function fba_repo_manager_multistep_publish_form($form_state = NULL) {
           '#type' => 'markup',
           '#value' => 'This step adds individual and cumulative filesizes to objects<br />',
         );
-        foreach ($_SESSION['my_batch_results']['success'] as $pidtomint) {
-          if (strcmp(substr($pidtomint[0], 0, strpos($pidtomint[0], ':')), 'dtcds') === 0) {
-            //original private object was a dataset, so a DOI is required
+        if ($_SESSION['my_batch_results']['success']) {
+          foreach ($_SESSION['my_batch_results']['success'] as $pidtoupdate) {
+            if (sidora_is_datacomponent($pidtoupdate[0]) || sidora_is_dataset($pidtoupdate[0])) {
+              //original private object was a dataset or a datacomponent, so filesize updates required
 
-            $form['row' . $rownumber] = array(
-              '#type' => 'fieldset',
-              '#collapsible' => FALSE,
-              '#collapsed' => FALSE,
-            );
-            $form['row' . $rownumber]['publishpid'] = array(
-              '#type' => 'markup',
-              '#value' => '<a href="http://environmentdata.org/archive/' . $pidtomint[1] . '" target="#blank" >' . $pidtomint[1] . '</a>',
-            );
-            $rownumber++;
+              $form['row' . $rownumber] = array(
+                '#type' => 'fieldset',
+                '#collapsible' => FALSE,
+                '#collapsed' => FALSE,
+              );
+              $form['row' . $rownumber]['publishpid'] = array(
+                '#type' => 'markup',
+                '#value' => '<a href="http://10.0.10.202/environmentdata.local/archive/' . $pidtoupdate[1] . '" target="#blank" >' . $pidtoupdate[1] . '</a>',
+              );
+              $rownumber++;
+            }
           }
+        }
+        else {
+          $form['plaintext'] = array(
+            '#type' => 'markup',
+            '#value' => 'No PIDS returned from previous phase<br />',
+          );
         }
 
         $form['submit'] = array(
@@ -222,21 +230,29 @@ function fba_repo_manager_multistep_publish_form($form_state = NULL) {
           '#type' => 'markup',
           '#value' => 'This step triggers DOI minting for the published datasets<br />',
         );
-        foreach ($_SESSION['my_batch_results']['success'] as $pidtomint) {
-          if (strcmp(substr($pidtomint[0], 0, strpos($pidtomint[0], ':')), 'dtcds') === 0) {
-            //original private object was a dataset, so a DOI is required
+        if ($_SESSION['my_batch_results']['success']) {
+          foreach ($_SESSION['my_batch_results']['success'] as $pidtoupdate) {
+            if (strcmp(substr($pidtoupdate[0], 0, strpos($pidtoupdate[0], ':')), 'dtcds') === 0) {
+              //original private object was a dataset, so a DOI is required
 
-            $form['row' . $rownumber] = array(
-              '#type' => 'fieldset',
-              '#collapsible' => FALSE,
-              '#collapsed' => FALSE,
-            );
-            $form['row' . $rownumber]['publishpid'] = array(
-              '#type' => 'markup',
-              '#value' => '<a href="http://http://environmentdata.org/archive/' . $pidtomint[1] . '" target="#blank" >' . $pidtomint[1] . '</a>',
-            );
-            $rownumber++;
+              $form['row' . $rownumber] = array(
+                '#type' => 'fieldset',
+                '#collapsible' => FALSE,
+                '#collapsed' => FALSE,
+              );
+              $form['row' . $rownumber]['publishpid'] = array(
+                '#type' => 'markup',
+                '#value' => '<a href="http://10.0.10.202/environmentdata.local/archive/' . $pidtoupdate[1] . '" target="#blank" >' . $pidtoupdate[1] . '</a>',
+              );
+              $rownumber++;
+            }
           }
+        }
+        else {
+          $form['plaintext'] = array(
+            '#type' => 'markup',
+            '#value' => 'No PIDS returned from previous phase<br />',
+          );
         }
 //        $form['pidstopublish'] = array(
 //          '#type' => 'hidden',
@@ -439,15 +455,21 @@ function pubsearch_r($pid, $rdfs, &$results) {
   module_load_include('inc', 'sidora', 'includes/fba');
 
   $repository = tuque_wrapper_get_repository_instance();
-  $objecttopublish = $repository->getObject($pid);
-
-  $results[] = $pid;
-  foreach ($rdfs as $rdf) {
-    $objrels = $objecttopublish->relationships->get(FEDORA_RELS_EXT_URI, $rdf);
-    if ($objrels) {
-      foreach ($objrels as $objrel) {
-        $nextpid = $objrel['object']['value'];
-        pubsearch_r($nextpid, $rdfs, $results);
+  try {
+    $objecttopublish = $repository->getObject($pid);
+  }
+  catch (RepositoryException $ex) {
+    $code = $ex->getCode(); //The object may not exist
+  }
+  if ($objecttopublish) {
+    $results[] = $pid;
+    foreach ($rdfs as $rdf) {
+      $objrels = $objecttopublish->relationships->get(FBA_URI, $rdf);
+      if (count($objrels) > 0) {
+        foreach ($objrels as $objrel) {
+          $nextpid = $objrel['object']['value'];
+          pubsearch_r($nextpid, $rdfs, $results);
+        }
       }
     }
   }
@@ -501,6 +523,7 @@ function _publish_batch_1() {
 
   $operations = array();
 
+  //$rdfns = array_merge(sidora_return_fba_classes_namespaces(), sidora_return_fba_resources_namespaces());
   $rdfns[] = 'dtcac';
   $query_string = "select DISTINCT ?object where {?object ?y ?z . FILTER regex(str(?object),";
   //"dtcmt|dtcac|dtcds" 
@@ -536,12 +559,10 @@ function _publish_batch_1() {
 }
 
 /**
- * 
+ * This sets up the list of objects to be cloned
  * @return array
  */
 function _publish_batch_3($topactivitypid, $clonelist) {
-  global $user;
-
   $batch = array(
     'title' => t('First batch run'),
     'file' => drupal_get_path('module', 'fba_repo_manager') . '/batchfunctions_publish.inc',
@@ -550,28 +571,33 @@ function _publish_batch_3($topactivitypid, $clonelist) {
   );
   //enumerate through clone list to create new objects
   foreach ($clonelist as $clonepid) {
-    if (strcmp($topactivitypid, $clonepid) === 0) {
-      //array_unshift($batch['operations'], array('cloneobject', array($topactivitypid, TRUE))); //TRUE as it's the root object being submitted
-      array_unshift($batch['operations'], array('cloneobject', array($topactivitypid))); //TRUE as it's the root object being submitted
-    }
-    else {
-      //array_unshift($batch['operations'], array('cloneobject', array($clonepid, FALSE)));
-      array_unshift($batch['operations'], array('cloneobject', array($clonepid)));
-    }
+    array_unshift($batch['operations'], array('cloneobject', array($clonepid)));
   }
   return $batch;
 }
 
 function _publish_batch_4($pids) {
-  global $user;
-
   $batch = array(
     'title' => t('Second batch run'),
     'file' => drupal_get_path('module', 'fba_repo_manager') . '/batchfunctions_publish.inc',
     'operations' => array(),
     'finished' => '_publish_finished_4',
   );
-  $batch['operations'][] = array('tidyuprelations', array($pids));
+  //populate the DTCA observed properties from the csv files (data components only)
+  if (count($pids) > 0) {
+    foreach ($pids as $pidarray) {
+      if (sidora_is_datacomponent($pidarray[0])) {
+        $batch['operations'][] = array('updatedtca', array($pidarray[1]));
+      }
+    }
+  }
+
+  //$batch['operations'][] = array('tidyuprelations', array($pids));
+  if (count($pids) > 0) {
+    foreach ($pids as $pidarray) {
+      $batch['operations'][] = array('tidyuprelation', array($pids, $pidarray)); //pids is before/after list, pid is current object being processed
+    }
+  }
   return $batch;
 }
 
@@ -582,6 +608,8 @@ function _publish_batch_4($pids) {
  * @param type $context
  */
 function _publish_batch_5($pids) {
+  module_load_include('inc', 'sidora', 'includes/fba');
+
   $batch = array(
     'title' => t('Third batch run'),
     'file' => drupal_get_path('module', 'fba_repo_manager') . '/batchfunctions_publish.inc',
@@ -589,8 +617,13 @@ function _publish_batch_5($pids) {
     'finished' => '_publish_finished_5',
   );
 
-  foreach ($pids as $pid) {
-    $batch['operations'][] = array('downloadablefilesizes', array($pid[1]));
+  if (count($pids) > 0) {
+    foreach ($pids as $pid) {
+      if (sidora_is_dataset($pid[0])) {
+        $batch['operations'][] = array(
+          'downloadablefilesizes', array($pid[0], $pid[1]));
+      }
+    }
   }
   return $batch;
 }
@@ -630,7 +663,6 @@ function _publish_op_1($memberpid, &$context) {
   $imoc = $rels->get(FEDORA_RELS_EXT_URI, 'isMemberOfCollection');
   $imocname = $imoc[0]['object']['value'];
   $imocprefix = substr($imocname, 0, strpos($imocname, ':'));
-
   $resource_rdfs = sidora_return_fba_resource_rdfs();
   $concept_rdfs = sidora_return_fba_concept_rdfs();
   $rdfs = array_merge($resource_rdfs, $concept_rdfs);
@@ -669,6 +701,7 @@ function _publish_finished_1($success, $results, $operations) {
     $_SESSION['submitted'] = $results['submitted'];
   }
   else {
+
     // An error occurred.
     $message = 'An error occurred while processing phase 1.';
   }

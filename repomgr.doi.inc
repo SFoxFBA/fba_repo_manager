@@ -10,8 +10,9 @@ function _finished_1($success, $results, $operations) {
   if ($success) {
     // Here we could do something meaningful with the results.
     // We just display the number of nodes we processed...
-    $message = count($results['pidmissingdoi']) . ' objects have missing DOI.<br/>';
-    $_SESSION['pidsmissingdois'] = $results['pidmissingdoi'];
+    $message = 'Success.<br/>';
+    $res = $results['pidsmissingdoi'];
+    $_SESSION['pidsmissingdoi'] = $res;
   }
   else {
     // An error occurred.
@@ -34,16 +35,20 @@ function _finished_1($success, $results, $operations) {
 function _finished_2($success, $results, $operations) {
   if ($success) {
     // Here we could do something meaningful with the results.
-    // We just display the number of nodes we processed...
-    $message = count($results['pidmissingdoi']) . ' objects have missing DOI.<br/>';
-    $_SESSION['pidsmissingdois'] = $results['pidmissingdoi'];
+    $_SESSION['pidsmissingdoi'] = $results['pidsmissingdoi']; //needed?
+    $_SESSION['mintingfailed'] = $results['mintingfailed']; //needed?
+    $_SESSION['registerfailed'] = $results['registerfailed']; //needed?
+    $_SESSION['errormessage'] = $results['errormessage']; //needed?
+    $_SESSION['pidsprocessed'] = $results['pidsprocessed']; //needed?
   }
   else {
     // An error occurred.
     // $operations contains the operations that remained unprocessed.
     $error_operation = reset($operations);
-    $message = 'An error occurred while processing ' . $error_operation[0]
-        . ' with arguments :' . print_r($error_operation[0], true);
+    $message = 'An error occurred while processing '
+        . $error_operation[0]
+        . ' with arguments :'
+        . print_r($error_operation[0], true);
   }
   drupal_set_message($message);
 }
@@ -55,63 +60,180 @@ function _finished_2($success, $results, $operations) {
  * 
  */
 function fba_repo_manager_multistep_form($form_state = NULL) {
+  $fba_doi = new fba_doi();
 
-  $prefix = islandora_doi_get_prefix();
-  $hostname = islandora_doi_get_hostname();
-  $username = islandora_doi_get_username();
-  $haspassword = islandora_doi_has_password();
-
-  if (empty($prefix) ||
-      empty($hostname) ||
-      empty($username) ||
-      (!$haspassword)) {
-    $form['plaintext'] = array(
-      '#type' => 'markup',
-      '#value' => 'The Islandora DOI configuration values have not yet been '
-      . 'fully completed.<br />',);
-  }
-  else {
+  if ($fba_doi->fba_check_doi_configuration()) {
     $step = isset($form_state['storage']['step']) ? $form_state['storage']['step'] : 1;
 
     $form['step_display'] = array(
       '#type' => 'item',
       '#value' => 'step ' . $step,
     );
-    if ($step === 1) {
-      $form['plaintext'] = array(
-        '#type' => 'markup',
-        '#value' => 'This step searches for published datasets with a missing '
-        . 'DOI entry in the DTCA datastream<br />',);
-    }
-    if ($step === 2) {
-      $nummissingdois = 0;
-      if ($_SESSION['pidsmissingdois']) {
-        foreach ($_SESSION['pidsmissingdois'] as $pidmissingdoi) {
-          $form['doipid' . $nummissingdois] = array(
+    switch ($step) {
+      case 1: { //THIS GETS CALLED TWICE! WHY???
+          $form['plaintext'] = array(
             '#type' => 'markup',
-            '#value' => 'This object has missing doi: ' . $pidmissingdoi . '<br />',
-          );
-          $nummissingdois++;
+            '#value' => 'This step searches for published datasets with a missing '
+            . 'DOI entry in the DTCA datastream<br />',);
+          break;
         }
-      }
-      $form['doipidtotal'] = array(
-        '#type' => 'markup',
-        '#value' => 'Total: ' . ($nummissingdois) . '<br />',
-      );
-      if ($nummissingdois > 0) {
-        $form['instructions'] = array(
-          '#type' => 'markup',
-          '#value' => 'Click Go to resubmit each PID for DOI minting.<br />',
-        );
-      }
+      case 2: {
+          $rownumber = 0;
+          if ($_SESSION['pidsmissingdoi']) {
+            foreach ($_SESSION['pidsmissingdoi'] as $pidwithmissingdoi) {
+              $form['row' . $rownumber] = array(
+                '#type' => 'fieldset',
+                '#collapsible' => FALSE,
+                '#collapsed' => FALSE,
+              );
+              $form['row' . $rownumber]['dspid'] = array(
+                '#type' => 'markup',
+                '#value' => 'Dataset PID:' . $pidwithmissingdoi . '<br/>',
+              );
+              $form['row' . $rownumber]['checkbox'] = array(
+                '#type' => 'checkbox',
+                //'#value' => $objdsids[$i] . '-' . $objlabels[$i],
+                '#title' => $pidwithmissingdoi,
+                '#name' => 'objs' . $rownumber,
+                '#return_value' => check_plain($pidwithmissingdoi),
+                '#parents' => array('row' . $rownumber),
+              );
+              /*
+                $form['doipid' . $nummissingdois] = array(
+                '#type' => 'markup',
+                '#value' => 'This object has missing doi: ' . $pidsmissingdoi . '<br />',
+                ); */
+              $rownumber++;
+            }
+          }
+          $form['doipidtotal'] = array(
+            '#type' => 'markup',
+            '#value' => 'Total: ' . ($rownumber) . '<br />',
+          );
+          if ($rownumber > 0) {
+            $form['instructions'] = array(
+              '#type' => 'markup',
+              '#value' => 'Click Go to resubmit selected PIDs for DOI minting.<br />',
+            );
+          }
+          //unset($_SESSION['pidsmissingdoi']);
+          break;
+        }
+      case 3: {
+          //tried to mint $_SESSION[pidsmissingdoi], minting faile on $_SESSION[mintingfailed], errors were $_SESSION[erromessage]
+          $form['plaintext'] = array(
+            '#type' => 'markup',
+            '#value' => 'Tried to mint these with a doi:<br/>',
+          );
+          if ($_SESSION['pidsprocessed']) {
+            foreach ($_SESSION['pidsprocessed'] as $ppd => $ppdpid) {
+              $form['plaintext'][] = array(
+                '#type' => 'markup',
+                '#value' => ' - ' . $ppd . '<br/>',
+              );
+            }
+          }
+          else {
+            $form['plaintext'][] = array(
+              '#type' => 'markup',
+              '#value' => ' - none<br/>',
+            );
+          }
+
+          $form['plaintext'][] = array(
+            '#type' => 'markup',
+            '#value' => 'These pids reported back with no doi:<br/>',
+          );
+          if ($_SESSION['pidsmissingdoi']) {
+            foreach ($_SESSION['pidsmissingdoi'] as $pmd => $pmdpid) {
+              $form['plaintext'][] = array(
+                '#type' => 'markup',
+                '#value' => ' - ' . $pmd . '<br/>',
+              );
+            }
+          }
+          else {
+            $form['plaintext'][] = array(
+              '#type' => 'markup',
+              '#value' => ' - none<br/>',
+            );
+          }
+
+          $form['plaintext'][] = array(
+            '#type' => 'markup',
+            '#value' => 'Metadata registration failed on these:<br/>',
+          );
+          if ($_SESSION['registerfailed']) {
+            foreach ($_SESSION['registerfailed'] as $rf => $rfpid) {
+              $form['plaintext'][] = array(
+                '#type' => 'markup',
+                '#value' => ' - ' . $rf . '<br/>',
+              );
+            }
+          }
+          else {
+            $form['plaintext'][] = array(
+              '#type' => 'markup',
+              '#value' => ' - none<br/>',
+            );
+          }
+          $form['plaintext'][] = array(
+            '#type' => 'markup',
+            '#value' => 'DOI Minting failed on these:<br/>',
+          );
+          if ($_SESSION['mintingfailed']) {
+            foreach ($_SESSION['mintingfailed'] as $mf => $mfpid) {
+              $form['plaintext'][] = array(
+                '#type' => 'markup',
+                '#value' => ' - ' . $mf . '<br/>',
+              );
+            }
+          }
+          else {
+            $form['plaintext'][] = array(
+              '#type' => 'markup',
+              '#value' => ' - none<br/>',
+            );
+          }
+
+          $form['plaintext'][] = array(
+            '#type' => 'markup',
+            '#value' => 'and we got these errors:<br/>',
+          );
+          if ($_SESSION['errormessage']) {
+            foreach ($_SESSION['errormessage'] as $errorpid => $errorarray) {
+              $form['plaintext'][] = array(
+                '#type' => 'markup',
+                '#value' => ' - ' . $errorpid . ' -> ' . $errorarray[0] . ' -> ' . $errorarray[1] . '<br/>',
+              );
+            }
+          }
+          else {
+            $form['plaintext'][] = array(
+              '#type' => 'markup',
+              '#value' => ' - none<br/>',
+            );
+          }
+          break;
+        }
+      default: {
+          break;
+        }
     }
-    if (($step === 1) || (($step === 2) && ($nummissingdois > 1))) {
+    if (($step === 1) || (($step === 2) && ($rownumber > 0))) {
       $form['submit'] = array(
         '#type' => 'submit',
         '#value' => 'Go',
       );
     }
   }
+  else {
+    $form['plaintext'] = array(
+      '#type' => 'markup',
+      '#value' => 'The Islandora DOI configuration values have not yet been '
+      . 'fully completed.<br />',);
+  }
+
   return $form;
 }
 
@@ -131,7 +253,13 @@ function fba_repo_manager_multistep_form_submit($form, &$form_state) {
       }
     case 2: {
         drupal_set_message('step 2 completed');
-        batch_set(_batch_2());
+        $post_data = $form_state['clicked_button']['#post'];
+        foreach ($post_data as $key => $value) {
+          if (preg_match('/^objs/', $key)) {
+            $checkedboxespids[] = $value;
+          }
+        }
+        batch_set(_batch_2($checkedboxespids));
         $form_state['redirect'] = 'repomgr/doi_3';
         break;
       }
@@ -180,7 +308,6 @@ function _batch_1() {
 function _op_1($memberpid, &$context) {
   module_load_include('inc', 'fedora_repository', 'api/tuque');
 
-  // get the mads datastream for this object
   $fedora_object = islandora_object_load($memberpid);
   $dtca = $fedora_object['DTCA'];
   $dtcacontent = $dtca->content;
@@ -188,7 +315,7 @@ function _op_1($memberpid, &$context) {
   $minteddoi = (string) $sxmldtca->doi;
   if (empty($minteddoi)) {
     //if $minteddoi is empty, then this needs flagging to repomgr
-    $context['results']['pidmissingdoi'][] = $memberpid;
+    $context['results']['pidsmissingdoi'][] = $memberpid;
   }
 
   // Optional message displayed under the progressbar.
@@ -199,13 +326,10 @@ function _op_1($memberpid, &$context) {
  * 
  * @return array
  */
-function _batch_2() {
-  if ($_SESSION['pidsmissingdois']) {
-    $pidsmissingdois = $_SESSION['pidsmissingdois'];
-  }
+function _batch_2($checkedboxespids) {
   $operations = array();
-  foreach ($pidsmissingdois as $pidmissingdoi) {
-    $operations[] = array('_op_2', array($pidmissingdoi));
+  foreach ($checkedboxespids as $checkedboxespid) {
+    $operations[] = array('_op_2', array($checkedboxespid));
   }
 
   $batch = array(
@@ -231,12 +355,23 @@ function _op_2($pid, &$context) {
   module_load_include('module', 'fba_doi', 'fba_doi');
 
   $hasdoi = _alreadyhasdoi($pid);
-
+  $context['results']['pidsprocessed'][$pid] = $pid;
   if ($hasdoi === false) {
-    $minteddoi = mintdoi($pid);
-    if (empty($minteddoi)) {
-      //if $minteddoi is empty, then this needs flagging to repomgr
-      $context['results']['pidmissingdoi'][] = $pid;
+    $fba_doi = new fba_doi();
+    $metadatadoi = $fba_doi->registermetadata($pid);
+    if ($metadatadoi !== FALSE) {
+      $minteddoi = $fba_doi->mintdoi($pid);
+      if (empty($minteddoi)) {
+        //if $minteddoi is empty, then this needs flagging to repomgr
+        $context['results']['pidsmissingdoi'][$pid] = $pid;
+        $context['results']['mintingfailed'][$pid] = $pid;
+        $context['results']['errormessage'][$pid] = $_SESSION['errormessage'];
+      }
+    }
+    else {
+      //registering failed so flag it
+      $context['results']['registerfailed'][$pid] = $pid;
+      $context['results']['errormessage'][$pid] = $_SESSION['errormessage'];
     }
   }
   // Optional message displayed under the progressbar.
@@ -252,10 +387,13 @@ function _doi_get_pids_from_collections() {
 
   $query = <<<EOD
   select \$object from <#ri>
-    where (\$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtcavon:collection> or
-           \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtceden:collection> or
-           \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtcwensum:collection> or
-           \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/fbads:collection>)
+    where ((\$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtcavon:collection> or
+            \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtceden:collection> or
+            \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/dtcwensum:collection> or
+            \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/fbads:collection> or
+            \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/syngds:collection> or
+            \$object  <info:fedora/fedora-system:def/relations-external#isMemberOfCollection> <info:fedora/fbads:collection>) and
+            \$object  <info:fedora/fedora-system:def/model#hasModel> <info:fedora/fba:dataset_cmodel>)
 EOD;
 
   $query = htmlentities(urlencode($query));
@@ -289,7 +427,8 @@ function _alreadyhasdoi($pid) {
   $reformattedpid = str_replace(':', '', $pid);
 
   //Check and reassociate or newly mint the DOI
-  $checkeddoi = fba_check_doi($reformattedpid);
+  $fba_doi = new fba_doi();
+  $checkeddoi = $fba_doi->fba_check_doi($reformattedpid);
   if ($checkeddoi === false) {
     //check has failed for some reason (check watchdog logs)
   }
