@@ -331,154 +331,6 @@ function create_open_xacml(stdClass $account = NULL) {
   return $xml;
 }
 
-function tidyuprelations($batchresults, &$context) {
-  module_load_include('inc', 'sidora', 'includes/fba');
-  module_load_include('module', 'tuque_wrapper', 'tuque_wrapper');
-  module_load_include('inc', 'sidora', 'includes/utils');
-  module_load_include('inc', 'fedora_repository', 'api/fedora_item');
-  foreach ($batchresults as $batchresult) {
-    $privatepid = $batchresult[0];
-    $publicpid = $batchresult[1];
-    $object = islandora_object_load($publicpid);
-    $dtca = $object['DTCA'];
-    $dtcacontent = $dtca->content;
-    $dtcads = simplexml_load_string($dtcacontent);
-    $selectedcollectionns = (string) $dtcads->archivalPublicationCollection;
-
-    $lastchainpid = findlastpidinchain($privatepid, FBA_URI, 'hasPublishedVersion');
-
-    foreach ($object as $dsid => $notused) {
-      switch ($dsid) {
-        case 'DC': {
-            //Apply the new publish transformation 
-            $transform = drupal_get_path('module', 'islandora_content_model_forms') . "/transforms/dtca_to_dc_publish.xsl";
-            $xsl = new DOMDocument();
-            $xsl->load($transform);
-            $xslt = new XSLTProcessor();
-            $xslt->importStyleSheet($xsl);
-            $ds = DOMDocument::loadXML($dtcacontent);
-            $transformeddoc = $xslt->transformToDoc($ds);
-            $topleveldc = $transformeddoc->getElementsByTagNameNS('http://www.openarchives.org/OAI/2.0/oai_dc/', 'dc')->item(0);
-            $dcid = $transformeddoc->createElement('dc:identifier', $publicpid);
-            $topleveldc->appendChild($dcid);
-            $object['DC']->content = $transformeddoc->saveXML();
-            break;
-          }
-        case 'RELS-EXT': {
-            //isMemberOfCollection fbauser<xxx>:collection needs swapping to dtc<xxxx>
-            $rels = $object->relationships;
-            $imocs = $rels->get(FEDORA_RELS_EXT_URI, 'isMemberOfCollection');
-            foreach ($imocs as $imoc) {
-              $imocvalue = $imoc[object][value];
-              //$user_id = $user->islandora_user_pid;
-              //$user_collection_ns = str_replace(array('-', ':'), '', $user_id);
-              //$user_collection = $user_collection_ns . ':collection';
-              //if (strcmp($imocvalue, $user_collection) === 0) {
-              $rels->remove(FEDORA_RELS_EXT_URI, 'isMemberOfCollection', $imocvalue);
-              $selectedcollectionns = (string) $dtcads->archivalPublicationCollection;
-              $rels->add(FEDORA_RELS_EXT_URI, 'isMemberOfCollection', $selectedcollectionns . ':collection');
-              //}
-            }
-            $rels->remove(FEDORA_MODEL_URI, 'hasModel', 'si:conceptCModel');
-            $rels->remove(FEDORA_MODEL_URI, 'hasModel', 'si:resourceCModel');
-            //isComponentInputOf dtcan:xx needs swapping to the published (eg) analysis pid
-            swaprelsvalues(FBA_URI, 'isComponentInputOf', $batchresults, $object);
-            //URL RDFS's dtcan:xx needs swapping to the published (eg) analysis pid
-            $allurlrdfs = sidora_return_fba_url_rdfs();
-            foreach ($allurlrdfs as $allurlrdf) {
-              swaprelsvalues(FBA_URI, $allurlrdf, $batchresults, $object);
-            }
-
-            //Handle hasXXXX relsext here
-            $allrdfs = array_merge(sidora_return_fba_concept_rdfs(), sidora_return_fba_resource_rdfs());
-            foreach ($allrdfs as $allrdf) {
-              swaprelsvalues(FBA_URI, $allrdf, $batchresults, $object);
-            }
-
-            //As full versioning code isn't in place, will just force this for now
-            $rels->add(FBA_URI, 'isLatestVersion', 'yes', RELS_TYPE_PLAIN_LITERAL);
-
-            break;
-          }
-        case 'DTCA': {
-            //the new objects archival version number needs setting to 1 greater 
-            //than current highest
-            $sxmldtca = new SimpleXMLElement($dtcacontent);
-            $nowdate = sprintf("%sT%s.000Z", date("Y-m-d"), date("H:i:s"));
-            $sxmldtca->archivalPublicationDate = $nowdate;
-            //Version number needs to be taken from last published in the chain
-            if (is_null($lastchainpid)) {
-              //$sxmldtca->archivalPublicationVersion++;
-            }
-            else {
-              $lastchainobject = islandora_object_load($lastchainpid[0]);
-              $lastchaindtca = $lastchainobject['DTCA'];
-              $lastchaindtcacontent = $lastchaindtca->content;
-              $lastchainsxmldtca = new SimpleXMLElement($lastchaindtcacontent);
-              $lastchainversion = (int) $lastchainsxmldtca->archivalPublicationVersion;
-              //$sxmldtca->archivalPublicationVersion = $lastchainversion + 1;
-            }
-
-            unset($sxmldtca->archivalPublicationState);
-            unset($sxmldtca->archivalPublicationLicencePid);
-            unset($sxmldtca->archivalPublicationCollection);
-
-            $object['DTCA']->content = $sxmldtca->asXML();
-            break;
-          }
-        case 'RELS-INT': {
-            //change the rdf:description/rdf:about value.
-            $ri = $object['RELS-INT'];
-            $fri = new IslandoraFedoraRelsInt($ri);
-            $fri->changeObjectID($publicpid);
-
-            //change the hasConstituent pid value, remembering that it has a suffix of (eg) /COLS-1-1
-            $ricontent = $ri->content;
-            $newricontent = str_replace($privatepid, $publicpid, $ricontent);
-            $object['RELS-INT']->content = $newricontent;
-            break;
-          }
-        default: {
-            if (strpos($dsid, 'COLS') !== FALSE) { //Could also be DTCA, POLICY, OBJ<n>
-              //COLSx-x datastream
-              //<rdf:description rdf:about> needs pid swapping
-              //rdf:description/dc:identifier needs pid swapping out, noting that there's a suffix 
-              $ri = $object[$dsid];
-              $ricontent = $ri->content;
-              $newricontent = str_replace($privatepid, $publicpid, $ricontent);
-              $object[$dsid]->content = $newricontent;
-            }
-          }
-      }
-    }
-    //Need to add the hasPublishedVersion relsext now, to the last object in the chain
-    if (is_null($lastchainpid)) {
-      $pidtoupdate = $privatepid;
-      $pidtopointto = $publicpid;
-    }
-    else {
-      $pidtoupdate = $lastchainpid[0];
-      $pidtopointto = $publicpid;
-    }
-
-    $privateobject = islandora_object_load($pidtoupdate);
-    $privrels = $privateobject->relationships;
-    $privrels->add(FBA_URI, 'hasPublishedVersion', $pidtopointto);
-
-    $dtcapriv = $privateobject['DTCA'];
-    $dtcacontentpriv = $dtcapriv->content;
-    $sxmldtca = new SimpleXMLElement($dtcacontentpriv);
-    unset($sxmldtca->archivalPublicationState);
-    unset($sxmldtca->archivalPublicationLicencePid);
-    unset($sxmldtca->archivalPublicationCollection);
-    $privateobject['DTCA']->content = $sxmldtca->asXML();
-    //if it's a dataset or datacomponent, then phase 5 needs to know about it
-    if (sidora_is_datacomponent($privatepid) || sidora_is_dataset($privatepid)) {
-      $context['results']['success'][] = array($privatepid, $publicpid, TRUE);
-    }
-  }
-}
-
 function tidyuprelation($batchresults, $relationpid, &$context) {
   module_load_include('inc', 'sidora', 'includes/fba');
   module_load_include('module', 'tuque_wrapper', 'tuque_wrapper');
@@ -487,118 +339,29 @@ function tidyuprelation($batchresults, $relationpid, &$context) {
 
   $privatepid = $relationpid[0];
   $publicpid = $relationpid[1];
-  $object = islandora_object_load($publicpid);
-  $dtca = $object['DTCA'];
-  $dtcacontent = $dtca->content;
-  $dtcads = simplexml_load_string($dtcacontent);
-  $selectedcollectionns = (string) $dtcads->archivalPublicationCollection;
-
-  $lastchainpid = findlastpidinchain($privatepid, FBA_URI, 'hasPublishedVersion');
-
-  foreach ($object as $dsid => $notused) {
-    switch ($dsid) {
-      case 'DC': {
-          //Apply the new publish transformation 
-          $transform = drupal_get_path('module', 'islandora_content_model_forms') . "/transforms/dtca_to_dc_publish.xsl";
-          $xsl = new DOMDocument();
-          $xsl->load($transform);
-          $xslt = new XSLTProcessor();
-          $xslt->importStyleSheet($xsl);
-          $ds = DOMDocument::loadXML($dtcacontent);
-          $transformeddoc = $xslt->transformToDoc($ds);
-          $topleveldc = $transformeddoc->getElementsByTagNameNS('http://www.openarchives.org/OAI/2.0/oai_dc/', 'dc')->item(0);
-          $dcid = $transformeddoc->createElement('dc:identifier', $publicpid);
-          $topleveldc->appendChild($dcid);
-          $object['DC']->content = $transformeddoc->saveXML();
-          break;
-        }
-      case 'RELS-EXT': {
-          //isMemberOfCollection fbauser<xxx>:collection needs swapping to dtc<xxxx>
-          $rels = $object->relationships;
-          $imocs = $rels->get(FEDORA_RELS_EXT_URI, 'isMemberOfCollection');
-          foreach ($imocs as $imoc) {
-            $imocvalue = $imoc[object][value];
-            //$user_id = $user->islandora_user_pid;
-            //$user_collection_ns = str_replace(array('-', ':'), '', $user_id);
-            //$user_collection = $user_collection_ns . ':collection';
-            //if (strcmp($imocvalue, $user_collection) === 0) {
-            $rels->remove(FEDORA_RELS_EXT_URI, 'isMemberOfCollection', $imocvalue);
-            $selectedcollectionns = (string) $dtcads->archivalPublicationCollection;
-            $rels->add(FEDORA_RELS_EXT_URI, 'isMemberOfCollection', $selectedcollectionns . ':collection');
-            //}
-          }
-          $rels->remove(FEDORA_MODEL_URI, 'hasModel', 'si:conceptCModel');
-          $rels->remove(FEDORA_MODEL_URI, 'hasModel', 'si:resourceCModel');
-          //isComponentInputOf dtcan:xx needs swapping to the published (eg) analysis pid
-          swaprelsvalues(FBA_URI, 'isComponentInputOf', $batchresults, $object);
-          //URL RDFS's dtcan:xx needs swapping to the published (eg) analysis pid
-          $allurlrdfs = sidora_return_fba_url_rdfs();
-          foreach ($allurlrdfs as $allurlrdf) {
-            swaprelsvalues(FBA_URI, $allurlrdf, $batchresults, $object);
-          }
-
-          //Handle hasXXXX relsext here
-          $allrdfs = array_merge(sidora_return_fba_concept_rdfs(), sidora_return_fba_resource_rdfs());
-          foreach ($allrdfs as $allrdf) {
-            swaprelsvalues(FBA_URI, $allrdf, $batchresults, $object);
-          }
-
-          //As full versioning code isn't in place, will just force this for now
-          $rels->add(FBA_URI, 'isLatestVersion', 'yes', RELS_TYPE_PLAIN_LITERAL);
-
-          break;
-        }
-      case 'DTCA': {
-          //the new objects archival version number needs setting to 1 greater 
-          //than current highest
-          $sxmldtca = new SimpleXMLElement($dtcacontent);
-          $nowdate = sprintf("%sT%s.000Z", date("Y-m-d"), date("H:i:s"));
-          $sxmldtca->archivalPublicationDate = $nowdate;
-          //Version number needs to be taken from last published in the chain
-          if (is_null($lastchainpid)) {
-            //$sxmldtca->archivalPublicationVersion++;
-          }
-          else {
-            $lastchainobject = islandora_object_load($lastchainpid[0]);
-            $lastchaindtca = $lastchainobject['DTCA'];
-            $lastchaindtcacontent = $lastchaindtca->content;
-            $lastchainsxmldtca = new SimpleXMLElement($lastchaindtcacontent);
-            $lastchainversion = (int) $lastchainsxmldtca->archivalPublicationVersion;
-            //$sxmldtca->archivalPublicationVersion = $lastchainversion + 1;
-          }
-
-          unset($sxmldtca->archivalPublicationState);
-          unset($sxmldtca->archivalPublicationLicencePid);
-          unset($sxmldtca->archivalPublicationCollection);
-
-          $object['DTCA']->content = $sxmldtca->asXML();
-          break;
-        }
-      case 'RELS-INT': {
-          //change the rdf:description/rdf:about value.
-          $ri = $object['RELS-INT'];
-          $fri = new IslandoraFedoraRelsInt($ri);
-          $fri->changeObjectID($publicpid);
-
-          //change the hasConstituent pid value, remembering that it has a suffix of (eg) /COLS-1-1
-          $ricontent = $ri->content;
-          $newricontent = str_replace($privatepid, $publicpid, $ricontent);
-          $object['RELS-INT']->content = $newricontent;
-          break;
-        }
-      default: {
-          if (strpos($dsid, 'COLS') !== FALSE) { //Could also be DTCA, POLICY, OBJ<n>
-            //COLSx-x datastream
-            //<rdf:description rdf:about> needs pid swapping
-            //rdf:description/dc:identifier needs pid swapping out, noting that there's a suffix 
-            $ri = $object[$dsid];
-            $ricontent = $ri->content;
-            $newricontent = str_replace($privatepid, $publicpid, $ricontent);
-            $object[$dsid]->content = $newricontent;
-          }
-        }
+  $fiobject = new Fedora_Item($publicpid);
+  $objectdatastreams = $fiobject->get_datastreams_list_as_array();
+  foreach ($objectdatastreams as $objectdsid => $notused) {
+    if (strpos($objectdsid, 'COLS') !== FALSE) {
+      $colsdatastreams[] = $objectdsid;
     }
   }
+
+  $object = islandora_object_load($publicpid);
+
+  //Process the datastreams (COLS first, RELS-EXT, DTCA, others, DC last)
+  if (count($colsdatastreams) > 0) {
+    foreach ($colsdatastreams as $colsdsid) {
+      processcolsdatastream($object, $colsdsid, $privatepid, $publicpid);
+    }
+  }
+
+  processrelextdatastream($object, $batchresults);
+  $lastchainpid = findlastpidinchain($privatepid, FBA_URI, 'hasPublishedVersion');
+  processdtcadatastream($object, $lastchainpid);
+  processrelsintdatastream($object, $privatepid, $publicpid);
+  processdcdatastream($object, $publicpid);
+
   //Need to add the hasPublishedVersion relsext now, to the last object in the chain
   if (is_null($lastchainpid)) {
     $pidtoupdate = $privatepid;
@@ -612,18 +375,25 @@ function tidyuprelation($batchresults, $relationpid, &$context) {
   $privateobject = islandora_object_load($pidtoupdate);
   $privrels = $privateobject->relationships;
   $privrels->add(FBA_URI, 'hasPublishedVersion', $pidtopointto);
+  cleararchivalpublicationfields($pidtoupdate);
+  cleararchivalpublicationfields($publicpid);
 
-  $dtcapriv = $privateobject['DTCA'];
-  $dtcacontentpriv = $dtcapriv->content;
-  $sxmldtca = new SimpleXMLElement($dtcacontentpriv);
-  unset($sxmldtca->archivalPublicationState);
-  unset($sxmldtca->archivalPublicationLicencePid);
-  unset($sxmldtca->archivalPublicationCollection);
-  $privateobject['DTCA']->content = $sxmldtca->asXML();
   //if it's a dataset or datacomponent, then phase 5 needs to know about it
   if (sidora_is_datacomponent($privatepid) || sidora_is_dataset($privatepid)) {
     $context['results']['success'][] = array($privatepid, $publicpid, TRUE);
   }
+}
+
+function cleararchivalpublicationfields($pid) {
+  $object = islandora_object_load($pid);
+
+  $dtca = $object['DTCA'];
+  $dtcacontent = $dtca->content;
+  $sxmldtca = new SimpleXMLElement($dtcacontent);
+  unset($sxmldtca->archivalPublicationState);
+  unset($sxmldtca->archivalPublicationLicencePid);
+  unset($sxmldtca->archivalPublicationCollection);
+  $object['DTCA']->content = $sxmldtca->asXML();
 }
 
 function swaprelsvalues($namespace, $relation, $batchresults, &$object) {
@@ -640,6 +410,150 @@ function swaprelsvalues($namespace, $relation, $batchresults, &$object) {
       }
     }
   }
+}
+
+function processcolsdatastream($object, $dsid, $privatepid, $publicpid) {
+  //COLSx-x datastream
+  //<rdf:description rdf:about> needs pid swapping
+  //rdf:description/dc:identifier needs pid swapping out, noting that there's a suffix 
+
+  $ri = $object[$dsid];
+  $ricontent = $ri->content;
+  //Need to aggregate all the hasTaxon rdfs into the RELS-EXT datastream
+
+  $sxml = new SimpleXMLElement($ricontent);
+  $sxml->registerXPathNamespace('fba', FBA_URI);
+  $htrels = $sxml->xpath('//fba:hasTaxon');
+  foreach ($htrels as $htrel) {
+    $taxonattr = $htrel->attributes(RDF_URI);
+    if (count($taxonattr) > 0) {
+      foreach ($taxonattr as $unused => $taxonattrstring) {
+        $taxonpidstring = (string) $taxonattrstring;
+        $taxonpid = substr($taxonpidstring, strpos($taxonpidstring, '/') + 1);
+        $taxonitem = new Fedora_Item($publicpid);
+        $taxonitem->add_relationship('hasTaxon', $taxonpid, FBA_URI);
+
+        //get the taxon's scientific name for the DTCA datastream
+        $dwcobject = islandora_object_load($taxonpid);
+        $dwc = $dwcobject['DWC'];
+        $dwccontent = $dwc->content;
+        $dwcsxml = new SimpleXMLElement($dwccontent);
+        $dwcsxml->registerXPathNamespace('dwc', 'http://rs.tdwg.org/dwc/terms/');
+        $dwcscinames = $dwcsxml->xpath('//dwc:scientificName');
+        $dwcsciname = (string) $dwcscinames[0];
+
+        //now write it to the DTCA datastream CAN THIS BE DONE IN ONE GO SO AUDIT BLOAT DOESN'T HAPPEN?
+        $dtcadatastream = $object['DTCA'];
+        $dtcadscontent = $dtcadatastream->content;
+        $domdtca = DOMDocument::loadXML($dtcadscontent);
+
+        $taxonobspropxml = $domdtca->createElementNS('http://fba.org.uk/schemas/moles/3.4.0', 'taxonObservedProperty');
+        $charstrxml = $domdtca->createElement('gco:CharacterString', $dwcsciname);
+        $taxonobspropxml->appendChild($charstrxml);
+        $datacomp = $domdtca->getElementsByTagName('DataComponent')->item(0);
+        $datacomp->appendChild($taxonobspropxml);
+        $object['DTCA']->content = $domdtca->saveXML(); //write the datastream xml back to the object
+      }
+    }
+  }
+  $newricontent = str_replace($privatepid, $publicpid, $ricontent);
+  $object[$dsid]->content = $newricontent;
+}
+
+function processdcdatastream($object, $publicpid) {
+  $dtca = $object['DTCA'];
+  $dtcacontent = $dtca->content;
+
+  //Apply the new publish transformation 
+  $transform = drupal_get_path('module', 'islandora_content_model_forms') . "/transforms/dtca_to_dc_publish.xsl";
+  $xsl = new DOMDocument();
+  $xsl->load($transform);
+  $xslt = new XSLTProcessor();
+  $xslt->importStyleSheet($xsl);
+  $ds = DOMDocument::loadXML($dtcacontent);
+  $transformeddoc = $xslt->transformToDoc($ds);
+  $topleveldc = $transformeddoc->getElementsByTagNameNS('http://www.openarchives.org/OAI/2.0/oai_dc/', 'dc')->item(0);
+  $dcid = $transformeddoc->createElement('dc:identifier', $publicpid);
+  $topleveldc->appendChild($dcid);
+  $object['DC']->content = $transformeddoc->saveXML();
+}
+
+function processrelextdatastream($object, $batchresults) {
+  $dtca = $object['DTCA'];
+  $dtcacontent = $dtca->content;
+  $dtcads = simplexml_load_string($dtcacontent);
+
+  //isMemberOfCollection fbauser<xxx>:collection needs swapping to dtc<xxxx>
+  $rels = $object->relationships;
+  $imocs = $rels->get(FEDORA_RELS_EXT_URI, 'isMemberOfCollection');
+  foreach ($imocs as $imoc) {
+    $imocvalue = $imoc[object][value];
+    //$user_id = $user->islandora_user_pid;
+    //$user_collection_ns = str_replace(array('-', ':'), '', $user_id);
+    //$user_collection = $user_collection_ns . ':collection';
+    //if (strcmp($imocvalue, $user_collection) === 0) {
+    $rels->remove(FEDORA_RELS_EXT_URI, 'isMemberOfCollection', $imocvalue);
+    //}
+  }
+
+  $selectedcollectionns = (string) $dtcads->archivalPublicationCollection;
+  $rels->add(FEDORA_RELS_EXT_URI, 'isMemberOfCollection', $selectedcollectionns . ':collection');
+  $rels->remove(FEDORA_MODEL_URI, 'hasModel', 'si:conceptCModel');
+  $rels->remove(FEDORA_MODEL_URI, 'hasModel', 'si:resourceCModel');
+  //isComponentInputOf dtcan:xx needs swapping to the published (eg) analysis pid
+  swaprelsvalues(FBA_URI, 'isComponentInputOf', $batchresults, $object);
+  //URL RDFS's dtcan:xx needs swapping to the published (eg) analysis pid
+  $allurlrdfs = sidora_return_fba_url_rdfs();
+  foreach ($allurlrdfs as $allurlrdf) {
+    swaprelsvalues(FBA_URI, $allurlrdf, $batchresults, $object);
+  }
+
+  //Handle hasXXXX relsext here
+  $allrdfs = array_merge(sidora_return_fba_concept_rdfs(), sidora_return_fba_resource_rdfs());
+  foreach ($allrdfs as $allrdf) {
+    swaprelsvalues(FBA_URI, $allrdf, $batchresults, $object);
+  }
+
+  //As full versioning code isn't in place, will just force this for now
+  $rels->add(FBA_URI, 'isLatestVersion', 'yes', RELS_TYPE_PLAIN_LITERAL);
+}
+
+function processrelsintdatastream($object, $privatepid, $publicpid) {
+  //change the rdf:description/rdf:about value.
+  $ri = $object['RELS-INT'];
+  if ($ri) {
+    $fri = new IslandoraFedoraRelsInt($ri);
+    $fri->changeObjectID($publicpid);
+
+    //change the hasConstituent pid value, remembering that it has a suffix of (eg) /COLS-1-1
+    $ricontent = $ri->content;
+    $newricontent = str_replace($privatepid, $publicpid, $ricontent);
+    $object['RELS-INT']->content = $newricontent;
+  }
+}
+
+function processdtcadatastream($object, $lastchainpid) {
+  $dtca = $object['DTCA'];
+  $dtcacontent = $dtca->content;
+
+  //the new objects archival version number needs setting to 1 greater 
+  //than current highest
+  $sxmldtca = new SimpleXMLElement($dtcacontent);
+  $nowdate = sprintf("%sT%s.000Z", date("Y-m-d"), date("H:i:s"));
+  $sxmldtca->archivalPublicationDate = $nowdate;
+  //Version number needs to be taken from last published in the chain
+  if (is_null($lastchainpid)) {
+    //$sxmldtca->archivalPublicationVersion++;
+  }
+  else {
+    $lastchainobject = islandora_object_load($lastchainpid[0]);
+    $lastchaindtca = $lastchainobject['DTCA'];
+    $lastchaindtcacontent = $lastchaindtca->content;
+    $lastchainsxmldtca = new SimpleXMLElement($lastchaindtcacontent);
+    $lastchainversion = (int) $lastchainsxmldtca->archivalPublicationVersion;
+    //$sxmldtca->archivalPublicationVersion = $lastchainversion + 1;
+  }
+  $object['DTCA']->content = $sxmldtca->asXML();
 }
 
 function findlastpidinchain($pid, $namespace, $relation) {
