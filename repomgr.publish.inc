@@ -83,7 +83,7 @@ function fba_repo_manager_multistep_publish_form($form_state = NULL) {
             );
             $form['row' . $rownumber]['hyperlink'] = array(
               '#type' => 'markup',
-              '#value' => '<a href="http://10.0.10.202/environmentdata.local/archive/' . $pidwithsubmittedflag[1] . '" target="#blank" >' . $pidwithsubmittedflag[1] . '</a>',
+              '#value' => '<a href="http://environmentdata.org/archive/' . $pidwithsubmittedflag[1] . '" target="#blank" >' . $pidwithsubmittedflag[1] . '</a>',
             );
           }
         }
@@ -118,7 +118,7 @@ function fba_repo_manager_multistep_publish_form($form_state = NULL) {
           );
           $form['row' . $rownumber]['publishpid'] = array(
             '#type' => 'markup',
-            '#value' => '<a href="http://10.0.10.202/environmentdata.local/archive/' . $pidtopublish . '" target="#blank" >' . $pidtopublish . '</a>',
+            '#value' => '<a href="http://environmentdata.org/archive/' . $pidtopublish . '" target="#blank" >' . $pidtopublish . '</a>',
           );
         }
 //        $form['pidstopublish'] = array(
@@ -159,7 +159,7 @@ function fba_repo_manager_multistep_publish_form($form_state = NULL) {
           );
           $form['row' . $rownumber]['publishpid'] = array(
             '#type' => 'markup',
-            '#value' => '<a href="http://10.0.10.202/environmentdata.local/archive/' . $pidtopublish . '" target="#blank" >' . $pidtopublish . '</a>',
+            '#value' => '<a href="http://environmentdata.org/archive/' . $pidtopublish . '" target="#blank" >' . $pidtopublish . '</a>',
           );
           $rownumber++;
         }
@@ -204,7 +204,7 @@ function fba_repo_manager_multistep_publish_form($form_state = NULL) {
               );
               $form['row' . $rownumber]['publishpid'] = array(
                 '#type' => 'markup',
-                '#value' => '<a href="http://10.0.10.202/environmentdata.local/archive/' . $pidtoupdate[1] . '" target="#blank" >' . $pidtoupdate[1] . '</a>',
+                '#value' => '<a href="http://environmentdata.org/archive/' . $pidtoupdate[1] . '" target="#blank" >' . $pidtoupdate[1] . '</a>',
               );
               $rownumber++;
             }
@@ -242,7 +242,7 @@ function fba_repo_manager_multistep_publish_form($form_state = NULL) {
               );
               $form['row' . $rownumber]['publishpid'] = array(
                 '#type' => 'markup',
-                '#value' => '<a href="http://10.0.10.202/environmentdata.local/archive/' . $pidtoupdate[1] . '" target="#blank" >' . $pidtoupdate[1] . '</a>',
+                '#value' => '<a href="http://environmentdata.org/archive/' . $pidtoupdate[1] . '" target="#blank" >' . $pidtoupdate[1] . '</a>',
               );
               $rownumber++;
             }
@@ -592,7 +592,6 @@ function _publish_batch_4($pids) {
     }
   }
 
-  //$batch['operations'][] = array('tidyuprelations', array($pids));
   if (count($pids) > 0) {
     foreach ($pids as $pidarray) {
       $batch['operations'][] = array('tidyuprelation', array($pids, $pidarray)); //pids is before/after list, pid is current object being processed
